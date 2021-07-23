@@ -4,6 +4,7 @@ import (
 	"bytes"
 	log "github.com/sirupsen/logrus"
 	tb "gopkg.in/tucnak/telebot.v2"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -107,6 +108,9 @@ func main() {
 	})
 
 	bot.Start()
+
+	// heroku healthcheck
+	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 }
 
 func checkEnvVariable(name string) string {
