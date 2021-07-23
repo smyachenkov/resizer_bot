@@ -56,7 +56,7 @@ func main() {
 	bot.Handle(tb.OnText, func(m *tb.Message) {
 		// greeting
 		if m.Text == "/start" {
-			bot.Send(m.Sender, "Hello\\! I can resize images for you. Send me a file or an image", tb.ModeMarkdownV2)
+			bot.Send(m.Sender, "Hello! I can resize images for you. Send me a file or an image")
 			return
 		}
 		chatId := m.Chat.ID
