@@ -21,6 +21,9 @@ func main() {
 
 	log.SetOutput(os.Stdout)
 
+	// heroku healthcheck
+	go http.ListenAndServe(":"+os.Getenv("PORT"), nil)
+
 	// map of chat_id to last image in it
 	var lastChatImage = make(map[int64]string)
 
@@ -108,9 +111,6 @@ func main() {
 	})
 
 	bot.Start()
-
-	// heroku healthcheck
-	http.ListenAndServe(":"+os.Getenv("PORT"), nil)
 }
 
 func checkEnvVariable(name string) string {
