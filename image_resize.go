@@ -2,31 +2,51 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"github.com/disintegration/imaging"
 	log "github.com/sirupsen/logrus"
 	"image"
 	"image/jpeg"
-	_ "image/jpeg"
+	"image/png"
 	"io"
 )
-import _ "image/png"
 
-func resizeImage(body io.ReadCloser, newDimensions Dimensions) ([]byte, error) {
+func resizeImage(body io.ReadCloser, imageType string, newDimensions Dimensions) ([]byte, error) {
+	if imageType != "image/jpeg" && imageType != "image/png" {
+		log.WithField("imageType", imageType).Error("Unsupported image type")
+		return nil, errors.New(fmt.Sprintf("Unsupported image type %v", imageType))
+	}
 	img, _, err := image.Decode(body)
 	if err != nil {
 		return nil, err
 	}
 	resImg := imaging.Resize(img, newDimensions.width, newDimensions.height, imaging.Lanczos)
-	imgBytes := imgToBytes(resImg)
+	var imgBytes []byte
+	if imageType == "image/jpeg" {
+		imgBytes = jpegToBytes(resImg)
+	} else if imageType == "image/png" {
+		imgBytes = pngToBytes(resImg)
+	}
 	return imgBytes, nil
 }
 
-func imgToBytes(img image.Image) []byte {
+func jpegToBytes(img image.Image) []byte {
 	var opt jpeg.Options
 	opt.Quality = 100
 
 	buff := bytes.NewBuffer(nil)
 	err := jpeg.Encode(buff, img, &opt)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return buff.Bytes()
+}
+
+func pngToBytes(img image.Image) []byte {
+	buff := bytes.NewBuffer(nil)
+	err := png.Encode(buff, img)
 	if err != nil {
 		log.Fatal(err)
 	}
