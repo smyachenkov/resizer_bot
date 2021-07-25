@@ -179,9 +179,9 @@ func createNameForResizedFile(originalName string, dimensions Dimensions, fileTy
 	var extension = filepath.Ext(originalName)
 	if extension == "" {
 		if fileType == "image/jpeg" {
-			extension = "jpeg"
+			extension = ".jpeg"
 		} else if fileType == "image/png" {
-			extension = "png"
+			extension = ".png"
 		}
 	}
 	var sb strings.Builder
@@ -190,7 +190,6 @@ func createNameForResizedFile(originalName string, dimensions Dimensions, fileTy
 	sb.WriteString(strconv.Itoa(dimensions.width))
 	sb.WriteString("x")
 	sb.WriteString(strconv.Itoa(dimensions.height))
-	sb.WriteString(".")
 	sb.WriteString(extension)
 	return sb.String()
 }
