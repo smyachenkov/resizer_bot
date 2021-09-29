@@ -26,7 +26,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3.5.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: smyachenkov/resizer_bot
           
       - name: Build and push
         id: docker_build
