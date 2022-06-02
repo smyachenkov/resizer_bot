@@ -44,7 +44,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3.5.0
         with:
-          images: smyachenkov/resizer_bot
+          images: smyachenkov/resizerlk_bot
           
       - name: Build and push
         id: docker_build
