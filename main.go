@@ -2,8 +2,7 @@ package main
 
 import (
 	"bytes"
-	log "github.com/sirupsen/logrus"
-	tb "gopkg.in/tucnak/telebot.v2"
+	"errors"
 	"mime"
 	"net/http"
 	"os"
@@ -12,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	tb "gopkg.in/telebot.v3"
 )
 
 type Dimensions struct {
@@ -20,19 +22,18 @@ type Dimensions struct {
 }
 
 type DocumentInfo struct {
-	globalId     string
+	globalID     string
 	originalName string
 }
 
 const (
-	Greeting          = "Hello\\! I can resize images for you. Send me a file or an image\\."
+	Greeting          = "Hello\\! I can resize images for you\\. Send me a file or an image\\."
 	RequestDimensions = "Great\\! Now send me width and height, for example, `128x128`\\. You can also send multiple dimensions in one message\\: `64x64 128x128`\\."
 	InvalidDimensions = "Send me correct dimensions, something like `128x128` or `256x256`\\."
 	RequestImage      = "Send me an image first\\."
 )
 
 func main() {
-
 	log.SetOutput(os.Stdout)
 
 	// heroku healthcheck
@@ -53,90 +54,103 @@ func main() {
 		return
 	}
 
-	bot.Handle(tb.OnDocument, func(m *tb.Message) {
-		chatId := m.Chat.ID
+	bot.Handle(tb.OnDocument, func(c tb.Context) error {
+		message := c.Message()
+		chatID := c.Chat().ID
+
 		// validate
-		if m.Document.MIME != "image/png" && m.Document.MIME != "image/jpeg" {
+		if message.Document.MIME != "image/png" && message.Document.MIME != "image/jpeg" {
 			log.WithFields(log.Fields{
-				"chatId":   strconv.FormatInt(chatId, 10),
-				"fileId":   m.Document.FileID,
-				"fileMime": m.Document.MIME,
+				"chatID":   strconv.FormatInt(chatID, 10),
+				"fileId":   message.Document.FileID,
+				"fileMime": message.Document.MIME,
 			}).Info("Unsupported document format")
-			return
+			return errors.New("unsupported document format")
 		}
 
 		documentInfo := DocumentInfo{
-			globalId:     m.Document.FileID,
-			originalName: m.Document.FileName,
+			globalID:     message.Document.FileID,
+			originalName: message.Document.FileName,
 		}
-		lastChatImage[chatId] = documentInfo
+		lastChatImage[chatID] = documentInfo
 		log.WithField("documentInfo", documentInfo).Info("New image queued for chat")
 
 		// request dimensions
-		bot.Send(m.Sender, RequestDimensions, tb.ModeMarkdownV2)
+		return c.Send(RequestDimensions, tb.ModeMarkdownV2)
 	})
 
-	bot.Handle(tb.OnPhoto, func(m *tb.Message) {
-		chatId := m.Chat.ID
+	bot.Handle(tb.OnPhoto, func(c tb.Context) error {
+		message := c.Message()
+		chatID := c.Chat().ID
 		documentInfo := DocumentInfo{
-			globalId:     m.Photo.File.FileID,
-			originalName: m.Photo.File.FileID,
+			globalID:     message.Photo.File.FileID,
+			originalName: message.Photo.File.FileID,
 		}
-		lastChatImage[chatId] = documentInfo
-		log.WithField("documentInfo", documentInfo).Info("New image queued for chat")
+		lastChatImage[chatID] = documentInfo
+		log.WithField("documentInfo", documentInfo).
+			WithField("chatID", chatID).
+			Info("New image queued for chat")
 
 		// request dimensions
-		bot.Send(m.Sender, RequestDimensions, tb.ModeMarkdownV2)
+		return c.Send(RequestDimensions, tb.ModeMarkdownV2)
 	})
 
-	bot.Handle(tb.OnText, func(m *tb.Message) {
+	bot.Handle(tb.OnText, func(c tb.Context) error {
+		message := c.Message()
+		chatID := c.Chat().ID
+
 		// greeting
-		if m.Text == "/start" {
-			bot.Send(m.Sender, Greeting, tb.ModeMarkdownV2)
-			return
+		if message.Text == "/start" {
+			return c.Send(Greeting, tb.ModeMarkdownV2)
 		}
-		chatId := m.Chat.ID
-		if documentInfo, ok := lastChatImage[chatId]; ok {
+		if documentInfo, ok := lastChatImage[chatID]; ok {
 			// parse dimensions
-			dimensionsToResize := parseDimensions(m.Text)
-			if len(dimensionsToResize) == 0 {
-				bot.Send(m.Sender, InvalidDimensions, tb.ModeMarkdownV2)
-				return
+			dimensions := parseDimensions(message.Text)
+			log.WithField("documentInfo", documentInfo).
+				WithField("dimensions", dimensions).
+				Info("Converting file for dimensions")
+			if len(dimensions) == 0 {
+				return c.Send(InvalidDimensions, tb.ModeMarkdownV2)
 			}
 
 			// check if file is present in tg
-			log.WithField("documentInfo", documentInfo).Info("Converting file")
-			file, err := bot.FileByID(documentInfo.globalId)
+			file, err := bot.FileByID(documentInfo.globalID)
 			if err != nil {
-				log.WithField("documentInfo", documentInfo).Info("Can't access file, removing from queue")
-				delete(lastChatImage, chatId)
+				log.WithField("documentInfo", documentInfo).
+					Error("Can't access file, removing from queue")
+				delete(lastChatImage, chatID)
 			}
 
 			// resize and reply
 			fileType := mime.TypeByExtension(filepath.Ext(file.FilePath))
-			for _, dimensions := range dimensionsToResize {
-				fileContent, err := bot.GetFile(&file)
+			for _, d := range dimensions {
+				log.WithField("documentInfo", documentInfo).
+					WithField("dimensions", d).
+					Info("Converting file for ")
+				fileContent, err := bot.File(&file)
 				if err != nil {
-					log.Error(err)
-					return
+					return err
 				}
-				resizedFile, err := resizeImage(fileContent, fileType, dimensions)
+				resizedFile, err := resizeImage(fileContent, fileType, d)
 				if err != nil {
-					log.Error(err)
+					return err
 				}
-				resizedName := createNameForResizedFile(documentInfo.originalName, dimensions, fileType)
+				resizedName := createNameForResizedFile(documentInfo.originalName, d, fileType)
 				toSend := &tb.Document{
 					File:      tb.FromReader(bytes.NewReader(resizedFile)),
 					Thumbnail: nil,
 					MIME:      fileType,
 					FileName:  resizedName,
 				}
-				bot.Send(m.Sender, toSend)
+				err = c.Send(toSend, tb.ModeMarkdownV2)
+				if err != nil {
+					return err
+				}
 			}
 		} else {
-			bot.Send(m.Sender, RequestImage, tb.ModeMarkdownV2)
-			return
+			return c.Send(RequestImage, tb.ModeMarkdownV2)
 		}
+		return nil
 	})
 
 	bot.Start()
